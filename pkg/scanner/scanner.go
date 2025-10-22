@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/anchore/clio"
@@ -17,6 +18,7 @@ import (
 	syftPkg "github.com/anchore/syft/syft/pkg"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
+	"gopkg.in/yaml.v3"
 )
 
 // PackageUpdate represents a package that needs to be updated
@@ -30,11 +32,17 @@ type PackageUpdate struct {
 
 // Scanner wraps Grype functionality
 type Scanner struct {
-	store vulnerability.Provider
+	store       vulnerability.Provider
+	ignoreRules []match.IgnoreRule
+}
+
+// grypeConfig represents the grype configuration file structure
+type grypeConfig struct {
+	Ignore []match.IgnoreRule `yaml:"ignore"`
 }
 
 // New creates a new Scanner instance
-func New() (*Scanner, error) {
+func New(grypeConfigPath string) (*Scanner, error) {
 	// Create a minimal clio.Identification
 	id := clio.Identification{
 		Name:    "grump",
@@ -50,9 +58,34 @@ func New() (*Scanner, error) {
 		return nil, fmt.Errorf("failed to load vulnerability database: %w", err)
 	}
 
+	// Load grype config if provided
+	var ignoreRules []match.IgnoreRule
+	if grypeConfigPath != "" {
+		ignoreRules, err = loadIgnoreRules(grypeConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load grype config: %w", err)
+		}
+	}
+
 	return &Scanner{
-		store: dbStore,
+		store:       dbStore,
+		ignoreRules: ignoreRules,
 	}, nil
+}
+
+// loadIgnoreRules loads and parses ignore rules from a grype configuration file
+func loadIgnoreRules(path string) ([]match.IgnoreRule, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var config grypeConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	return config.Ignore, nil
 }
 
 // Scan scans a project directory for vulnerabilities
@@ -98,6 +131,12 @@ func (s *Scanner) Scan(projectPath string) (match.Matches, []pkg.Package, error)
 
 	if results == nil {
 		return match.NewMatches(), grypePackages, nil
+	}
+
+	// Apply ignore rules if configured
+	if len(s.ignoreRules) > 0 {
+		filtered, _ := match.ApplyIgnoreRules(*results, s.ignoreRules)
+		return filtered, grypePackages, nil
 	}
 
 	return *results, grypePackages, nil

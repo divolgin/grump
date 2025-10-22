@@ -52,6 +52,32 @@ grump .
 grump --format json .
 ```
 
+### Ignoring Vulnerabilities
+
+You can use a Grype configuration file to ignore specific vulnerabilities or packages:
+
+```bash
+# Use a grype config file to ignore certain vulnerabilities
+grump --grype-config grype.yaml .
+```
+
+Example `grype.yaml` configuration:
+
+```yaml
+ignore:
+  # Ignore a specific vulnerability across all packages
+  - vulnerability: CVE-2024-1234
+
+  # Ignore all vulnerabilities for a specific package
+  - package:
+      name: github.com/example/vulnerable-package
+
+  # Ignore a specific vulnerability for a specific package
+  - vulnerability: GHSA-xxxx-yyyy-zzzz
+    package:
+      name: github.com/another/package
+```
+
 ### Example Output
 
 ```

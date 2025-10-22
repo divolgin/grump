@@ -14,6 +14,7 @@ import (
 func main() {
 	// Parse command line flags
 	outputFormat := flag.String("format", "text", "Output format (text or json)")
+	grypeConfig := flag.String("grype-config", "", "Path to grype config file for ignoring vulnerabilities and modules")
 	flag.Parse()
 
 	// Get the project path from arguments
@@ -59,14 +60,14 @@ func main() {
 	}
 
 	// Run the scan and fix process
-	exitCode := run(absPath, *outputFormat)
+	exitCode := run(absPath, *outputFormat, *grypeConfig)
 	os.Exit(exitCode)
 }
 
-func run(projectPath string, outputFormat string) int {
+func run(projectPath string, outputFormat string, grypeConfigPath string) int {
 	// Initialize scanner
 	fmt.Fprintln(os.Stderr, "Initializing vulnerability scanner...")
-	scan, err := scanner.New()
+	scan, err := scanner.New(grypeConfigPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to initialize scanner: %v\n", err)
 		return 2
