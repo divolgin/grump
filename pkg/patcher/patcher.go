@@ -8,6 +8,7 @@ import (
 	"github.com/chainguard-dev/gobump/pkg/types"
 	"github.com/chainguard-dev/gobump/pkg/update"
 	"github.com/divolgin/grump/pkg/scanner"
+	"golang.org/x/mod/semver"
 )
 
 // UpdateResult represents the result of updating a package
@@ -80,15 +81,33 @@ func (p *Patcher) RunGoTidy() error {
 // UpdateAll updates all packages in the list and runs go mod tidy at the end
 func (p *Patcher) UpdateAll(updates []scanner.PackageUpdate) []UpdateResult {
 	results := make([]UpdateResult, 0, len(updates))
+	// Track which packages have been updated and to what version
+	appliedVersions := make(map[string]string)
 
 	// Update all packages first
 	for _, upd := range updates {
+		// Check if package has already been updated in this session
+		if appliedVersion, exists := appliedVersions[upd.Name]; exists {
+			// Compare versions to see if we should skip
+			if shouldSkipUpdate(appliedVersion, upd.TargetVersion) {
+				// Skip this update - the package is already at a newer or same version
+				fmt.Fprintf(os.Stderr, "Skipping %s: already at version %s (requested %s)\n",
+					upd.Name, appliedVersion, upd.TargetVersion)
+				continue
+			}
+		}
+
 		err := p.UpdatePackage(upd.Name, upd.TargetVersion)
 		results = append(results, UpdateResult{
 			Update:  upd,
 			Success: err == nil,
 			Error:   err,
 		})
+
+		// Track the applied version if successful
+		if err == nil {
+			appliedVersions[upd.Name] = upd.TargetVersion
+		}
 	}
 
 	// Run go mod tidy after all updates, even if some failed
@@ -98,4 +117,20 @@ func (p *Patcher) UpdateAll(updates []scanner.PackageUpdate) []UpdateResult {
 	}
 
 	return results
+}
+
+// shouldSkipUpdate compares two versions and returns true if the applied version
+// is the same or newer than the target version (meaning we should skip the update)
+func shouldSkipUpdate(appliedVersion, targetVersion string) bool {
+	// If both versions are valid semver, use semver comparison
+	if semver.IsValid(appliedVersion) && semver.IsValid(targetVersion) {
+		cmp := semver.Compare(appliedVersion, targetVersion)
+		// Skip if applied version is greater than or equal to target
+		return cmp >= 0
+	}
+
+	// For pseudo-versions or other version formats, compare as strings
+	// This handles cases like v0.0.0-20250827065555 vs v0.0.0-20250224180022
+	// where the applied version has a later timestamp
+	return appliedVersion >= targetVersion
 }
