@@ -35,6 +35,7 @@ func New(projectPath string) (*Patcher, error) {
 }
 
 // UpdatePackage updates a single package to the specified version
+// Note: This does not run go tidy. Call RunGoTidy separately after updating packages.
 func (p *Patcher) UpdatePackage(pkgName, version string) error {
 	// Create package map for gobump
 	pkgVersions := map[string]*types.Package{
@@ -47,7 +48,7 @@ func (p *Patcher) UpdatePackage(pkgName, version string) error {
 	// Configure update
 	config := &types.Config{
 		Modroot:         p.projectPath,
-		Tidy:            true,
+		Tidy:            false,
 		TidySkipInitial: true,
 	}
 
@@ -59,10 +60,28 @@ func (p *Patcher) UpdatePackage(pkgName, version string) error {
 	return nil
 }
 
-// UpdateAll updates all packages in the list
+// RunGoTidy runs go mod tidy on the project
+func (p *Patcher) RunGoTidy() error {
+	// Configure tidy-only operation
+	config := &types.Config{
+		Modroot:         p.projectPath,
+		Tidy:            true,
+		TidySkipInitial: false,
+	}
+
+	// Run tidy with empty package map
+	if _, err := update.DoUpdate(map[string]*types.Package{}, config); err != nil {
+		return fmt.Errorf("failed to run go mod tidy: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateAll updates all packages in the list and runs go mod tidy at the end
 func (p *Patcher) UpdateAll(updates []scanner.PackageUpdate) []UpdateResult {
 	results := make([]UpdateResult, 0, len(updates))
 
+	// Update all packages first
 	for _, upd := range updates {
 		err := p.UpdatePackage(upd.Name, upd.TargetVersion)
 		results = append(results, UpdateResult{
@@ -70,6 +89,12 @@ func (p *Patcher) UpdateAll(updates []scanner.PackageUpdate) []UpdateResult {
 			Success: err == nil,
 			Error:   err,
 		})
+	}
+
+	// Run go mod tidy after all updates, even if some failed
+	if err := p.RunGoTidy(); err != nil {
+		// Log the error but don't fail the entire operation
+		fmt.Fprintf(os.Stderr, "Warning: go mod tidy failed: %v\n", err)
 	}
 
 	return results
