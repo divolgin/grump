@@ -22,10 +22,27 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage: grump [options] <path>\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nNote: Options must come before the path argument.\n")
+		fmt.Fprintf(os.Stderr, "Example: grump -format json /path/to/project\n")
+		os.Exit(2)
+	}
+
+	// Validate that there's exactly one positional argument
+	if len(args) > 1 {
+		fmt.Fprintf(os.Stderr, "Error: too many arguments. Expected 1 path, got %d arguments: %v\n", len(args), args)
+		fmt.Fprintf(os.Stderr, "\nUsage: grump [options] <path>\n")
+		fmt.Fprintf(os.Stderr, "\nNote: Options must come before the path argument.\n")
+		fmt.Fprintf(os.Stderr, "Example: grump -format json /path/to/project\n")
 		os.Exit(2)
 	}
 
 	projectPath := args[0]
+
+	// Validate output format
+	if *outputFormat != "text" && *outputFormat != "json" {
+		fmt.Fprintf(os.Stderr, "Error: invalid output format '%s'. Must be 'text' or 'json'.\n", *outputFormat)
+		os.Exit(2)
+	}
 
 	// Make path absolute
 	absPath, err := filepath.Abs(projectPath)
