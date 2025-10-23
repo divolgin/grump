@@ -3,10 +3,12 @@ package patcher
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/chainguard-dev/gobump/pkg/types"
 	"github.com/chainguard-dev/gobump/pkg/update"
 	"github.com/divolgin/grump/pkg/scanner"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
 )
 
@@ -55,11 +57,39 @@ func (p *Patcher) UpdatePackage(pkgName, version string) error {
 	return nil
 }
 
+// getGoVersion reads the Go version from the go.mod file
+func (p *Patcher) getGoVersion() (string, error) {
+	goModPath := filepath.Join(p.projectPath, "go.mod")
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read go.mod: %w", err)
+	}
+
+	modFile, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse go.mod: %w", err)
+	}
+
+	if modFile.Go == nil {
+		return "", fmt.Errorf("no Go version found in go.mod")
+	}
+
+	return modFile.Go.Version, nil
+}
+
 // RunGoTidy runs go mod tidy on the project
 func (p *Patcher) RunGoTidy() error {
+	// Read Go version from go.mod
+	goVersion, err := p.getGoVersion()
+	if err != nil {
+		// Log warning but don't fail - let go mod tidy use default behavior
+		fmt.Fprintf(os.Stderr, "Warning: could not read Go version from go.mod: %v\n", err)
+	}
+
 	// Configure tidy-only operation
 	config := &types.Config{
 		Modroot:         p.projectPath,
+		GoVersion:       goVersion,
 		Tidy:            true,
 		TidySkipInitial: false,
 	}
