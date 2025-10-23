@@ -88,12 +88,13 @@ func loadIgnoreRules(path string) ([]match.IgnoreRule, error) {
 	return config.Ignore, nil
 }
 
-// Scan scans a project directory for vulnerabilities
-func (s *Scanner) Scan(projectPath string) (match.Matches, []pkg.Package, error) {
+// Scan scans a go.mod file for vulnerabilities
+func (s *Scanner) Scan(goModPath string) (match.Matches, []pkg.Package, error) {
 	ctx := context.Background()
 
-	// Create a source from the directory
-	src, err := syft.GetSource(ctx, projectPath, syft.DefaultGetSourceConfig())
+	// Create a source from the go.mod file specifically (equivalent to "grype file:./go.mod")
+	// Note: Pass the plain file path without "file:" prefix - syft will automatically detect it as a file source
+	src, err := syft.GetSource(ctx, goModPath, syft.DefaultGetSourceConfig())
 	if err != nil {
 		return match.NewMatches(), nil, fmt.Errorf("failed to create source: %w", err)
 	}

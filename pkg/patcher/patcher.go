@@ -3,7 +3,6 @@ package patcher
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/chainguard-dev/gobump/pkg/types"
 	"github.com/chainguard-dev/gobump/pkg/update"
@@ -25,11 +24,6 @@ type Patcher struct {
 
 // New creates a new Patcher instance
 func New(projectPath string) (*Patcher, error) {
-	modFilePath := filepath.Join(projectPath, "go.mod")
-	if _, err := os.Stat(modFilePath); err != nil {
-		return nil, fmt.Errorf("go.mod not found at %s: %w", modFilePath, err)
-	}
-
 	return &Patcher{
 		projectPath: projectPath,
 	}, nil

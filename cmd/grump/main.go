@@ -52,19 +52,28 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Determine the path to go.mod file
+	var goModPath string
+	if filepath.Base(absPath) == "go.mod" {
+		// Input path already points to go.mod
+		goModPath = absPath
+	} else {
+		// Input path is a directory, append go.mod
+		goModPath = filepath.Join(absPath, "go.mod")
+	}
+
 	// Validate that go.mod exists
-	modFilePath := filepath.Join(absPath, "go.mod")
-	if _, err := os.Stat(modFilePath); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: go.mod not found at %s\n", modFilePath)
+	if _, err := os.Stat(goModPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: go.mod not found at %s\n", goModPath)
 		os.Exit(2)
 	}
 
 	// Run the scan and fix process
-	exitCode := run(absPath, *outputFormat, *grypeConfig)
+	exitCode := run(goModPath, *outputFormat, *grypeConfig)
 	os.Exit(exitCode)
 }
 
-func run(projectPath string, outputFormat string, grypeConfigPath string) int {
+func run(goModPath string, outputFormat string, grypeConfigPath string) int {
 	// Initialize scanner
 	fmt.Fprintln(os.Stderr, "Initializing vulnerability scanner...")
 	scan, err := scanner.New(grypeConfigPath)
@@ -75,8 +84,8 @@ func run(projectPath string, outputFormat string, grypeConfigPath string) int {
 	defer scan.Close()
 
 	// Scan the project
-	fmt.Fprintf(os.Stderr, "Scanning project at %s for vulnerabilities...\n", projectPath)
-	matches, _, err := scan.Scan(projectPath)
+	fmt.Fprintf(os.Stderr, "Scanning project at %s for vulnerabilities...\n", goModPath)
+	matches, _, err := scan.Scan(goModPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to scan project: %v\n", err)
 		return 2
@@ -90,8 +99,9 @@ func run(projectPath string, outputFormat string, grypeConfigPath string) int {
 		return 0
 	}
 
-	// Initialize patcher
-	patch, err := patcher.New(projectPath)
+	// Initialize patcher with the project directory
+	projectDir := filepath.Dir(goModPath)
+	patch, err := patcher.New(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to initialize patcher: %v\n", err)
 		return 2
