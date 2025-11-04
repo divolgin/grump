@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/chainguard-dev/gobump/pkg/types"
 	"github.com/chainguard-dev/gobump/pkg/update"
@@ -122,14 +123,25 @@ func (p *Patcher) UpdateAll(updates []scanner.PackageUpdate) []UpdateResult {
 		}
 
 		err := p.UpdatePackage(upd.Name, upd.TargetVersion)
+
+		// Check if the error is because the package is already at a newer version
+		// In this case, treat it as success since the vulnerability is already resolved
+		success := err == nil
+		if err != nil && isAlreadyNewerVersionError(err) {
+			success = true
+			// Still record the error for informational purposes, but mark as success
+			fmt.Fprintf(os.Stderr, "Skipping %s: already at or newer version (requested %s)\n",
+				upd.Name, upd.TargetVersion)
+		}
+
 		results = append(results, UpdateResult{
 			Update:  upd,
-			Success: err == nil,
+			Success: success,
 			Error:   err,
 		})
 
 		// Track the applied version if successful
-		if err == nil {
+		if success {
 			appliedVersions[upd.Name] = upd.TargetVersion
 		}
 	}
@@ -157,4 +169,16 @@ func shouldSkipUpdate(appliedVersion, targetVersion string) bool {
 	// This handles cases like v0.0.0-20250827065555 vs v0.0.0-20250224180022
 	// where the applied version has a later timestamp
 	return appliedVersion >= targetVersion
+}
+
+// isAlreadyNewerVersionError checks if an error indicates the package is already
+// at the requested version or a newer version
+func isAlreadyNewerVersionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Check for gobump error messages indicating the package is already at or above the target version
+	return strings.Contains(errStr, "is already at version") ||
+		strings.Contains(errStr, "already at or above")
 }

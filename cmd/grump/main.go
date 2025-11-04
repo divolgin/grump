@@ -117,11 +117,10 @@ func run(goModPath string, outputFormat string, grypeConfigPath string) int {
 		return 2
 	}
 
-	// Determine exit code based on results
-	for _, result := range results {
-		if !result.Success {
-			return 1 // Some vulnerabilities could not be fixed
-		}
+	// Determine exit code based on whether vulnerabilities remain unfixed
+	stats := reporter.AnalyzeResults(updates, results)
+	if stats.VulnerabilitiesFailed > 0 {
+		return 1 // Some vulnerabilities could not be fixed
 	}
 
 	return 0 // All vulnerabilities fixed

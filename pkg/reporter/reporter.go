@@ -19,6 +19,51 @@ type Report struct {
 	Updates               []UpdateReport `json:"updates"`
 }
 
+// ResultStats contains statistics about the update results
+type ResultStats struct {
+	PackagesUpdated       int
+	PackagesFailed        int
+	VulnerabilitiesFixed  int
+	VulnerabilitiesFailed int
+}
+
+// AnalyzeResults analyzes update results and returns statistics
+func AnalyzeResults(updates []scanner.PackageUpdate, results []patcher.UpdateResult) ResultStats {
+	stats := ResultStats{}
+
+	// Build a map of successfully updated packages
+	updatedPackages := make(map[string]bool)
+	for _, result := range results {
+		if result.Success {
+			stats.PackagesUpdated++
+			updatedPackages[result.Update.Name] = true
+		} else {
+			stats.PackagesFailed++
+		}
+	}
+
+	// Count how many vulnerabilities are fixed by these package updates
+	for _, update := range updates {
+		if updatedPackages[update.Name] {
+			stats.VulnerabilitiesFixed++
+		} else {
+			// Check if this package had any failed updates
+			hasFailed := false
+			for _, result := range results {
+				if result.Update.Name == update.Name && !result.Success {
+					hasFailed = true
+					break
+				}
+			}
+			if hasFailed {
+				stats.VulnerabilitiesFailed++
+			}
+		}
+	}
+
+	return stats
+}
+
 // UpdateReport contains details about a single update
 type UpdateReport struct {
 	Package        string `json:"package"`
@@ -68,58 +113,26 @@ func (r *Reporter) reportText(updates []scanner.PackageUpdate, results []patcher
 
 	fmt.Fprintln(r.writer, "\nUpdating dependencies...")
 
-	packagesUpdated := 0
-	packagesFailed := 0
-
 	for _, result := range results {
 		if result.Success {
 			fmt.Fprintf(r.writer, "  ✓ Updated %s to %s\n",
 				result.Update.Name,
 				result.Update.TargetVersion,
 			)
-			packagesUpdated++
 		} else {
 			fmt.Fprintf(r.writer, "  ✗ Failed to update %s: %v\n",
 				result.Update.Name,
 				result.Error,
 			)
-			packagesFailed++
 		}
 	}
 
-	// Count vulnerabilities addressed by checking which packages were updated
-	// Build a map of successfully updated packages
-	updatedPackages := make(map[string]bool)
-	for _, result := range results {
-		if result.Success {
-			updatedPackages[result.Update.Name] = true
-		}
-	}
+	// Analyze results to get statistics
+	stats := AnalyzeResults(updates, results)
 
-	// Count how many vulnerabilities are fixed by these package updates
-	vulnsFixed := 0
-	vulnsFailed := 0
-	for _, update := range updates {
-		if updatedPackages[update.Name] {
-			vulnsFixed++
-		} else {
-			// Check if this package had any failed updates
-			hasFailed := false
-			for _, result := range results {
-				if result.Update.Name == update.Name && !result.Success {
-					hasFailed = true
-					break
-				}
-			}
-			if hasFailed {
-				vulnsFailed++
-			}
-		}
-	}
-
-	fmt.Fprintf(r.writer, "\nSummary: Updated %d package(s) to fix %d vulnerabilities", packagesUpdated, vulnsFixed)
-	if packagesFailed > 0 {
-		fmt.Fprintf(r.writer, ", %d package(s) failed (%d vulnerabilities not fixed)", packagesFailed, vulnsFailed)
+	fmt.Fprintf(r.writer, "\nSummary: Updated %d package(s) to fix %d vulnerabilities", stats.PackagesUpdated, stats.VulnerabilitiesFixed)
+	if stats.PackagesFailed > 0 {
+		fmt.Fprintf(r.writer, ", %d package(s) failed (%d vulnerabilities not fixed)", stats.PackagesFailed, stats.VulnerabilitiesFailed)
 	}
 	fmt.Fprintln(r.writer)
 
@@ -128,13 +141,18 @@ func (r *Reporter) reportText(updates []scanner.PackageUpdate, results []patcher
 
 // reportJSON outputs results in JSON format
 func (r *Reporter) reportJSON(updates []scanner.PackageUpdate, results []patcher.UpdateResult) error {
+	// Analyze results to get statistics
+	stats := AnalyzeResults(updates, results)
+
 	report := Report{
-		TotalVulnerabilities: len(updates),
-		Updates:              make([]UpdateReport, 0, len(results)),
+		TotalVulnerabilities:  len(updates),
+		VulnerabilitiesFixed:  stats.VulnerabilitiesFixed,
+		VulnerabilitiesFailed: stats.VulnerabilitiesFailed,
+		PackagesUpdated:       stats.PackagesUpdated,
+		PackagesFailed:        stats.PackagesFailed,
+		Updates:               make([]UpdateReport, 0, len(results)),
 	}
 
-	// Build a map of successfully updated packages
-	updatedPackages := make(map[string]bool)
 	for _, result := range results {
 		updateReport := UpdateReport{
 			Package:        result.Update.Name,
@@ -150,32 +168,6 @@ func (r *Reporter) reportJSON(updates []scanner.PackageUpdate, results []patcher
 		}
 
 		report.Updates = append(report.Updates, updateReport)
-
-		if result.Success {
-			report.PackagesUpdated++
-			updatedPackages[result.Update.Name] = true
-		} else {
-			report.PackagesFailed++
-		}
-	}
-
-	// Count how many vulnerabilities are fixed by these package updates
-	for _, update := range updates {
-		if updatedPackages[update.Name] {
-			report.VulnerabilitiesFixed++
-		} else {
-			// Check if this package had any failed updates
-			hasFailed := false
-			for _, result := range results {
-				if result.Update.Name == update.Name && !result.Success {
-					hasFailed = true
-					break
-				}
-			}
-			if hasFailed {
-				report.VulnerabilitiesFailed++
-			}
-		}
 	}
 
 	encoder := json.NewEncoder(r.writer)
