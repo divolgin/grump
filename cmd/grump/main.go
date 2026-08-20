@@ -85,14 +85,18 @@ func run(goModPath string, outputFormat string, grypeConfigPath string) int {
 
 	// Scan the project
 	fmt.Fprintf(os.Stderr, "Scanning project at %s for vulnerabilities...\n", goModPath)
-	matches, _, err := scan.Scan(goModPath)
+	matches, packages, err := scan.Scan(goModPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to scan project: %v\n", err)
 		return 2
 	}
 
 	// Get fixable updates
-	updates := scan.GetFixableUpdates(matches)
+	updates, err := scan.GetFixableUpdates(matches, packages)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to select fixable updates: %v\n", err)
+		return 2
+	}
 
 	if len(updates) == 0 {
 		fmt.Fprintln(os.Stderr, "No fixable vulnerabilities found.")
