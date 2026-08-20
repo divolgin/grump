@@ -13,6 +13,7 @@ import (
 	"github.com/anchore/grype/grype/match"
 	"github.com/anchore/grype/grype/matcher"
 	"github.com/anchore/grype/grype/pkg"
+	"github.com/anchore/grype/grype/presenter/models"
 	"github.com/anchore/grype/grype/vulnerability"
 	"github.com/anchore/syft/syft"
 	syftPkg "github.com/anchore/syft/syft/pkg"
@@ -186,25 +187,39 @@ func isValidGoVersion(pkgName, version string) bool {
 	return err == nil
 }
 
-// GetFixableUpdates extracts fixable Go module updates from scan results
-func (s *Scanner) GetFixableUpdates(matches match.Matches) []PackageUpdate {
+// GetFixableUpdates extracts fixable Go module updates from scan results.
+// Use Grype's presenter model so target versions match the package-aware
+// suggestedVersion emitted by `grype -o json`.
+func (s *Scanner) GetFixableUpdates(matches match.Matches, packages []pkg.Package) ([]PackageUpdate, error) {
 	var updates []PackageUpdate
 
-	for m := range matches.Enumerate() {
-		// Filter: only Go modules with fixes
-		if m.Package.Type != syftPkg.GoModulePkg {
+	document, err := models.NewDocument(
+		clio.Identification{Name: "grump", Version: "dev"},
+		packages,
+		pkg.Context{},
+		matches,
+		nil,
+		s.store,
+		nil,
+		nil,
+		models.SortByPackage,
+		false,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build Grype presentation model: %w", err)
+	}
+
+	for _, m := range document.Matches {
+		if m.Artifact.Type != syftPkg.GoModulePkg {
 			continue
 		}
 
-		// Check if vulnerability has a fix
-		if len(m.Vulnerability.Fix.Versions) == 0 || m.Vulnerability.Fix.State != vulnerability.FixStateFixed {
-			continue
-		}
-
-		// Extract the suggested version
 		suggestedVersion := ""
-		if len(m.Vulnerability.Fix.Versions) > 0 {
-			suggestedVersion = m.Vulnerability.Fix.Versions[0]
+		for _, detail := range m.MatchDetails {
+			if detail.Fix != nil && detail.Fix.SuggestedVersion != "" {
+				suggestedVersion = detail.Fix.SuggestedVersion
+				break
+			}
 		}
 
 		if suggestedVersion == "" {
@@ -212,30 +227,24 @@ func (s *Scanner) GetFixableUpdates(matches match.Matches) []PackageUpdate {
 		}
 
 		// Normalize the version by copying prefix from current version
-		normalizedVersion := normalizeVersion(m.Package.Version, suggestedVersion)
+		normalizedVersion := normalizeVersion(m.Artifact.Version, suggestedVersion)
 
 		// Validate the version is parseable
-		if !isValidGoVersion(m.Package.Name, normalizedVersion) {
+		if !isValidGoVersion(m.Artifact.Name, normalizedVersion) {
 			fmt.Printf("Requesting pin to %s.\n This is not a valid SemVer, so skipping version check.\n", normalizedVersion)
 			continue
 		}
 
-		// Extract severity from metadata
-		severity := "Unknown"
-		if m.Vulnerability.Metadata != nil {
-			severity = m.Vulnerability.Metadata.Severity
-		}
-
 		updates = append(updates, PackageUpdate{
-			Name:           m.Package.Name,
-			CurrentVersion: m.Package.Version,
+			Name:           m.Artifact.Name,
+			CurrentVersion: m.Artifact.Version,
 			TargetVersion:  normalizedVersion,
 			VulnID:         m.Vulnerability.ID,
-			Severity:       severity,
+			Severity:       m.Vulnerability.Severity,
 		})
 	}
 
-	return updates
+	return updates, nil
 }
 
 // Close cleans up resources
