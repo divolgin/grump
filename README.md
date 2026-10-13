@@ -2,6 +2,8 @@
 
 Grump is a CLI tool that automatically identifies and patches vulnerabilities in Go projects by using [Grype](https://github.com/anchore/grype) for vulnerability scanning and [gobump](https://github.com/chainguard-dev/gobump) for dependency updates.
 
+![divolgin/grump cover](https://coverart.dev/covers/divolgin/grump.png)
+
 ## Features
 
 - **Automatic Vulnerability Scanning**: Uses Grype library to scan Go projects for vulnerabilities
